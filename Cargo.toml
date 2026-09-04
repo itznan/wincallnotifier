@@ -1,0 +1,44 @@
+[package]
+name = "wincallnotifier"
+version = "0.1.0"
+edition = "2021"
+description = "Android 15 Windows Phone Call Monitor via ADB"
+
+[dependencies]
+# Async Runtime
+tokio = { version = "1.38", features = ["full"] }
+
+# Serialization & Config
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Logging & Tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+
+# Regex for Telephony State Parsing
+regex = "1.10"
+
+# Windows Toast Notifications
+winrt-notification = "0.5"
+
+# System Tray & Window UI
+tray-icon = "0.19"
+winit = { version = "0.29", default-features = false, features = ["rwh_05"] }
+windows-sys = { version = "0.52", features = [
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Console",
+    "Win32_Graphics_Gdi"
+] }
+
+# Path and Directories
+directories = "5.0"
+chrono = "0.4"
