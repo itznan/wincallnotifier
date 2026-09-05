@@ -1,7 +1,9 @@
-name: Release Build
+name: Build and Release
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -26,8 +28,8 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
-    name: Build and Release (Windows x86_64)
+  build:
+    name: Build & Package (Windows x86_64)
     runs-on: windows-latest
 
     steps:
@@ -42,17 +44,24 @@ jobs:
           cache: true
 
       - name: Build Release Binary
-        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
-      - name: Build Windows Installer (Inno Setup)
+      - name: Setup Inno Setup
         shell: powershell
         run: |
-          if (Get-Command iscc -ErrorAction SilentlyContinue) {
-            Write-Host "Compiling Inno Setup installer..."
-            iscc installer.iss
+          # Add Inno Setup to PATH if pre-installed or install via choco
+          $innoPath = "C:\Program Files (x86)\Inno Setup 6"
+          if (Test-Path "$innoPath\ISCC.exe") {
+            echo "$innoPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           } else {
-            Write-Warning "iscc not found in PATH, skipping Inno Setup installer step."
+            choco install innosetup --no-progress
+            echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
+
+      - name: Compile Inno Setup Installer
+        shell: powershell
+        run: |
+          ISCC.exe installer.iss
 
       - name: Prepare Release Artifacts
         shell: powershell
@@ -75,7 +84,7 @@ jobs:
             Copy-Item "dist-installer\WinCallNotifier-Setup.exe" -Destination "release_assets\WinCallNotifier-Setup.exe"
           }
 
-          # Generate SHA256 checksums for all release files
+          # Generate SHA256 checksums
           Set-Location -Path "release_assets"
           $checksums = Get-ChildItem -File | ForEach-Object {
             $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
@@ -86,7 +95,15 @@ jobs:
 
           Get-ChildItem -Path "release_assets"
 
+      # Upload artifacts so they are always downloadable from the Actions run
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinCallNotifier-Windows-x86_64
+          path: release_assets/*
+
       - name: Determine Release Tag
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         id: get_tag
         shell: powershell
         run: |
@@ -102,7 +119,10 @@ jobs:
           "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: WinCallNotifier ${{ env.RELEASE_TAG }}
