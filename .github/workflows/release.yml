@@ -1,0 +1,116 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag name (e.g. v0.1.0)'
+        required: false
+        type: string
+        default: ''
+      draft:
+        description: 'Create draft release'
+        required: false
+        type: boolean
+        default: false
+      prerelease:
+        description: 'Create pre-release'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release (Windows x86_64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust Toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+          cache: true
+
+      - name: Build Release Binary
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Build Windows Installer (Inno Setup)
+        shell: powershell
+        run: |
+          if (Get-Command iscc -ErrorAction SilentlyContinue) {
+            Write-Host "Compiling Inno Setup installer..."
+            iscc installer.iss
+          } else {
+            Write-Warning "iscc not found in PATH, skipping Inno Setup installer step."
+          }
+
+      - name: Prepare Release Artifacts
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "release_assets" -Force | Out-Null
+          New-Item -ItemType Directory -Path "dist_zip" -Force | Out-Null
+
+          # Copy main binary and documentation into zip staging directory
+          Copy-Item "target\x86_64-pc-windows-msvc\release\wincallnotifier.exe" -Destination "dist_zip\"
+          Copy-Item "README.md" -Destination "dist_zip\"
+
+          # Create Portable ZIP package
+          Compress-Archive -Path "dist_zip\*" -DestinationPath "release_assets\wincallnotifier-windows-x86_64.zip" -Force
+
+          # Copy standalone binary
+          Copy-Item "target\x86_64-pc-windows-msvc\release\wincallnotifier.exe" -Destination "release_assets\wincallnotifier-windows-x86_64.exe"
+
+          # Copy installer if generated
+          if (Test-Path "dist-installer\WinCallNotifier-Setup.exe") {
+            Copy-Item "dist-installer\WinCallNotifier-Setup.exe" -Destination "release_assets\WinCallNotifier-Setup.exe"
+          }
+
+          # Generate SHA256 checksums for all release files
+          Set-Location -Path "release_assets"
+          $checksums = Get-ChildItem -File | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $checksums | Out-File -FilePath "SHA256SUMS.txt" -Encoding ascii
+          Set-Location -Path ".."
+
+          Get-ChildItem -Path "release_assets"
+
+      - name: Determine Release Tag
+        id: get_tag
+        shell: powershell
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.tag_name }}" -ne "") {
+            $tag = "${{ inputs.tag_name }}"
+          } elseif ($env:GITHUB_REF -like "refs/tags/*") {
+            $tag = $env:GITHUB_REF -replace "refs/tags/", ""
+          } else {
+            $ver = (Select-String -Path "Cargo.toml" -Pattern '^version\s*=\s*"([^"]+)"').Matches.Groups[1].Value
+            $tag = "v$ver"
+          }
+          Write-Host "Using release tag: $tag"
+          "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: WinCallNotifier ${{ env.RELEASE_TAG }}
+          draft: ${{ inputs.draft || false }}
+          prerelease: ${{ inputs.prerelease || false }}
+          generate_release_notes: true
+          files: |
+            release_assets/WinCallNotifier-Setup.exe
+            release_assets/wincallnotifier-windows-x86_64.zip
+            release_assets/wincallnotifier-windows-x86_64.exe
+            release_assets/SHA256SUMS.txt

@@ -1,4 +1,4 @@
-﻿use tracing::{error, info};
+use tracing::{error, info};
 use winrt_notification::{Duration, Scenario, Sound, Toast};
 use crate::call::state::CallEvent;
 use crate::config::AppConfig;
@@ -83,7 +83,7 @@ impl NotificationManager {
     }
 
     fn send_toast_internal(&self, title: &str, message: &str, is_incoming: bool, sound: bool) -> Result<()> {
-        let mut toast = Toast::new(APP_ID);
+        let toast = Toast::new(APP_ID);
         let mut toast = toast.title(title).text1(message);
 
         if is_incoming {
