@@ -1,6 +1,9 @@
-; WinCallNotifier Inno Setup Script
-#define MyAppName "WinCallNotifier"
+; WinCallNotifier Inno Setup Installer Script
+#ifndef MyAppVersion
 #define MyAppVersion "0.1.0"
+#endif
+
+#define MyAppName "WinCallNotifier"
 #define MyAppPublisher "itznan"
 #define MyAppURL "https://github.com/itznan/wincallnotifier"
 #define MyAppExeName "wincallnotifier.exe"
@@ -16,19 +19,21 @@ AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=dist-installer
-OutputBaseFilename=WinCallNotifier-Setup
+OutputBaseFilename=WinCallNotifier-Installer
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=lowest
+UninstallDisplayName={#MyAppName}
+UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "startupicon"; Description: "Start WinCallNotifier automatically when Windows starts"; GroupDescription: "Startup:"
+Name: "startupicon"; Description: "Start WinCallNotifier automatically when Windows starts"; GroupDescription: "Startup Options:"
 
 [Files]
 Source: "target\x86_64-pc-windows-msvc\release\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion

@@ -49,7 +49,6 @@ jobs:
       - name: Setup Inno Setup
         shell: powershell
         run: |
-          # Add Inno Setup to PATH if pre-installed or install via choco
           $innoPath = "C:\Program Files (x86)\Inno Setup 6"
           if (Test-Path "$innoPath\ISCC.exe") {
             echo "$innoPath" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
@@ -58,52 +57,7 @@ jobs:
             echo "C:\Program Files (x86)\Inno Setup 6" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
           }
 
-      - name: Compile Inno Setup Installer
-        shell: powershell
-        run: |
-          ISCC.exe installer.iss
-
-      - name: Prepare Release Artifacts
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Path "release_assets" -Force | Out-Null
-          New-Item -ItemType Directory -Path "dist_zip" -Force | Out-Null
-
-          # Copy main binary and documentation into zip staging directory
-          Copy-Item "target\x86_64-pc-windows-msvc\release\wincallnotifier.exe" -Destination "dist_zip\"
-          Copy-Item "README.md" -Destination "dist_zip\"
-
-          # Create Portable ZIP package
-          Compress-Archive -Path "dist_zip\*" -DestinationPath "release_assets\wincallnotifier-windows-x86_64.zip" -Force
-
-          # Copy standalone binary
-          Copy-Item "target\x86_64-pc-windows-msvc\release\wincallnotifier.exe" -Destination "release_assets\wincallnotifier-windows-x86_64.exe"
-
-          # Copy installer if generated
-          if (Test-Path "dist-installer\WinCallNotifier-Setup.exe") {
-            Copy-Item "dist-installer\WinCallNotifier-Setup.exe" -Destination "release_assets\WinCallNotifier-Setup.exe"
-          }
-
-          # Generate SHA256 checksums
-          Set-Location -Path "release_assets"
-          $checksums = Get-ChildItem -File | ForEach-Object {
-            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
-            "$hash  $($_.Name)"
-          }
-          $checksums | Out-File -FilePath "SHA256SUMS.txt" -Encoding ascii
-          Set-Location -Path ".."
-
-          Get-ChildItem -Path "release_assets"
-
-      # Upload artifacts so they are always downloadable from the Actions run
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: WinCallNotifier-Windows-x86_64
-          path: release_assets/*
-
       - name: Determine Release Tag
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         id: get_tag
         shell: powershell
         run: |
@@ -115,8 +69,50 @@ jobs:
             $ver = (Select-String -Path "Cargo.toml" -Pattern '^version\s*=\s*"([^"]+)"').Matches.Groups[1].Value
             $tag = "v$ver"
           }
-          Write-Host "Using release tag: $tag"
+          $cleanVersion = $tag.TrimStart("v")
+          Write-Host "Using release tag: $tag, clean version: $cleanVersion"
           "RELEASE_TAG=$tag" >> $env:GITHUB_ENV
+          "APP_VERSION=$cleanVersion" >> $env:GITHUB_ENV
+
+      - name: Compile Windows Installer
+        shell: powershell
+        run: |
+          ISCC.exe /DMyAppVersion="${{ env.APP_VERSION }}" installer.iss
+
+      - name: Prepare Release Artifacts
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Path "release_assets" -Force | Out-Null
+          New-Item -ItemType Directory -Path "dist_zip" -Force | Out-Null
+
+          # Copy main binary and documentation into zip staging directory
+          Copy-Item "target\x86_64-pc-windows-msvc\release\wincallnotifier.exe" -Destination "dist_zip\"
+          Copy-Item "README.md" -Destination "dist_zip\"
+
+          # 1. Official Windows Installer Wizard (.exe)
+          if (Test-Path "dist-installer\WinCallNotifier-Installer.exe") {
+            Copy-Item "dist-installer\WinCallNotifier-Installer.exe" -Destination "release_assets\WinCallNotifier-Installer.exe"
+          }
+
+          # 2. Portable Standalone ZIP Package (.zip)
+          Compress-Archive -Path "dist_zip\*" -DestinationPath "release_assets\WinCallNotifier-Portable.zip" -Force
+
+          # 3. Generate SHA256 Checksums
+          Set-Location -Path "release_assets"
+          $checksums = Get-ChildItem -File | ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 $_.FullName).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $checksums | Out-File -FilePath "SHA256SUMS.txt" -Encoding ascii
+          Set-Location -Path ".."
+
+          Get-ChildItem -Path "release_assets"
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: WinCallNotifier-Windows
+          path: release_assets/*
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -130,7 +126,6 @@ jobs:
           prerelease: ${{ inputs.prerelease || false }}
           generate_release_notes: true
           files: |
-            release_assets/WinCallNotifier-Setup.exe
-            release_assets/wincallnotifier-windows-x86_64.zip
-            release_assets/wincallnotifier-windows-x86_64.exe
+            release_assets/WinCallNotifier-Installer.exe
+            release_assets/WinCallNotifier-Portable.zip
             release_assets/SHA256SUMS.txt
